@@ -1,3 +1,5 @@
+{-# LANGUAGE ImplicitParams #-}
+
 module Main where
 
 import Lib
@@ -15,27 +17,27 @@ import Utils
 
 data HrepOptions = HrepOptions
   { pattern         :: Regex 
-  , path            :: [FilePath] }
+  , path            :: [FilePath] 
+  , vimGrep         :: Bool }
+
 
 data HrepMatch = HrepMatch
   { text :: String
   , line :: Int
   , column :: Int
-  , filePath :: String }
+  , filePath :: FilePath }
 
 instance Show HrepMatch where
-  show (HrepMatch t l c f) = intercalate ":" [f, (show l), (show c), t]
+  show (HrepMatch t l c f) = intercalate ":" [f, show l, show c, t]
 
 hrepParser :: Parser HrepOptions
 hrepParser = HrepOptions
   <$> argument regexOpt (metavar "PATTERN")
   <*> many (argument str (metavar "PATH..."))
+  <*> switch (long "vimgrep" <> help "This is the default, is here for compatibility")
 
-explodePaths :: [FilePath] -> Maybe Regex -> IO [FilePath]
-explodePaths path _ = return path
-  
 hrep :: HrepOptions -> IO ()
-hrep (HrepOptions pattern paths) = do 
+hrep (HrepOptions pattern paths vimGrep) = do 
   forM_ paths $ \path -> do
     isFile <- doesFileExist path
     if isFile
@@ -43,11 +45,11 @@ hrep (HrepOptions pattern paths) = do
       else pathWalk path $ \dir subdirs files -> do
         forM_ files $ \file -> do
           hrepFile pattern $ joinPath [dir, file]
-          hrep $ HrepOptions pattern $ map (\s -> joinPath [dir, s]) subdirs
+          hrep $ HrepOptions pattern (map (\s -> joinPath [dir, s]) subdirs) vimGrep
 
 hrepFile :: Regex -> FilePath -> IO ()
 hrepFile pattern fileName = do
-  contents <- readFile fileName
+  contents <- readFile $ fileName
   forM_ (zip (lines contents) [1..]) $ \(line,lineNo) -> do
     case matchOnce pattern line of
       Nothing      -> return ()
@@ -58,7 +60,8 @@ printMatch :: HrepMatch -> IO ()
 printMatch match = putStrLn $ show match
 
 main :: IO ()
-main = hrep =<< execParser opts
+main = do
+  hrep =<< execParser opts
   where
     opts = info (helper <*> hrepParser)
       (fullDesc
